@@ -1,0 +1,369 @@
+library(ggeffects)  
+library(insight)     
+library(datawizard)  
+library(parameters)  
+library(performance) 
+library(glmmTMB)     
+library(foreign)
+library(dplyr)
+library(naniar)
+library(plyr)
+library(gmodels)
+library(ProbBayes)
+library(ggplot2)
+library(tidyverse) 
+library(haven) 
+library(sjstats) 
+library(ROCR) 
+library(brms) 
+library(modelr) 
+library(tidybayes) 
+library(officer)
+library(sjlabelled)  
+library(lme4)
+library(emmeans)
+library(lmerTest)
+library(pbkrtest)
+
+# Set up working directories
+setwd("E:/陈壮/MPH下/研究项目/2021苏格兰健康/9048tab_8A4905AEF5D5A6E30A080A81C821036AB6B8AACDE0F29A86EFC19602425745FB_V1/UKDA-9048-tab/tab/R/1")
+
+# Read the data
+data <- read.table("shes21i_eul.tab", header = TRUE, sep = "\t", na.strings = c("-1", "-2", "-6", "-8", "-9"))
+
+# Select the required variables
+data_selected <- data %>%
+  select(age, Sex, drating, simd20_sga, AlcotA)
+
+# Filtering data for ages 16 to 64
+data_filtered_16to64 <- data_selected %>%
+  filter(age >= 16 & age <= 64)
+
+# View summary of filtered data
+summary(data_filtered_16to64)
+
+# Exclude samples where drating is NA or 0 while AlcotA is NA
+data_cleaned_16to64 <- data_filtered_16to64 %>%
+  filter(!(is.na(drating) | drating == 0) & !is.na(AlcotA))
+# 查看过滤后的数据摘要
+summary(data_cleaned_16to64)
+
+# Create age groups and count them
+# Convert age variables to factors and group them
+data_cleaned_16to64 <- data_cleaned_16to64 %>%
+  mutate(
+    age_group = case_when(
+      age >= 16 & age <= 19 ~ "1",
+      age >= 20 & age <= 24 ~ "2",
+      age >= 25 & age <= 29 ~ "3",
+      age >= 30 & age <= 34 ~ "4",
+      age >= 35 & age <= 39 ~ "5",
+      age >= 40 & age <= 44 ~ "6",
+      age >= 45 & age <= 49 ~ "7",
+      age >= 50 & age <= 54 ~ "8",
+      age >= 55 & age <= 59 ~ "9",
+      age >= 60 & age <= 64 ~ "10",
+      TRUE ~ NA_character_
+    ),
+    sex_group = case_when(
+      Sex == 1 ~ "M",
+      Sex == 2 ~ "F",
+      TRUE ~ NA_character_
+    ),
+    simd_group = as.factor(simd20_sga)
+  ) %>%
+  filter(!is.na(age_group) & !is.na(sex_group) & !is.na(simd_group))
+
+summary(data_cleaned_16to64)
+
+
+#————————————————————————————————————————————
+#Number and percentage of statistically age
+age_group_summary <- data_cleaned_16to64 %>%
+  group_by(age_group) %>%
+  tally() %>%
+  mutate(percentage = (n / sum(n)) * 100)
+
+print(age_group_summary)
+
+# Count the mean and standard deviation of dring for each age
+# Create functions to calculate the dring mean and standard deviation for each age group
+compute_summary <- function(age_group_value) {
+  data_cleaned_16to64 %>%
+    filter(age_group == age_group_value) %>%
+    summarise(
+      age_group = age_group_value,
+      drating_mean = mean(drating, na.rm = TRUE),
+      drating_sd = sd(drating, na.rm = TRUE)
+    )
+}
+
+age_groups <- unique(data_cleaned_16to64$age_group)
+age_group_summary_mean <- bind_rows(lapply(age_groups, compute_summary))
+
+print(age_group_summary_mean)
+#————————————————————————————————————————————————————
+
+
+
+#——————————————————————————————————————————
+# :: Number and percentage of sexes counted
+sex_group_summary <- data_cleaned_16to64 %>%
+  group_by(sex_group) %>%
+  tally() %>%
+  mutate(percentage = (n / sum(n)) * 100)
+print(sex_group_summary)
+
+# Create functions to calculate the mean and standard deviation of dring for each sex
+compute_sex_group_summary <- function(sex_group_value) {
+  data_cleaned_16to64 %>%
+    filter(sex_group == sex_group_value) %>%
+    summarise(
+      sex_group = sex_group_value,
+      drating_mean = mean(drating, na.rm = TRUE),
+      drating_sd = sd(drating, na.rm = TRUE)
+    )
+}
+
+# Use functions to calculate statistics for each gender group and combine results
+sex_groups <- unique(data_cleaned_16to64$sex_group)
+sex_group_summary_mean <- bind_rows(lapply(sex_groups, compute_sex_group_summary))
+
+print(sex_group_summary_mean)
+
+#——————————————————————————————————————————
+
+
+
+#——————————————————————————————
+# of people and percentage of simd counted
+simd_group_summary <- data_cleaned_16to64 %>%
+  group_by(simd_group) %>%
+  tally() %>%
+  mutate(percentage = (n / sum(n)) * 100)
+
+print(simd_group_summary)
+
+# Create functions to calculate the drating mean and standard deviation for each SIMD group
+compute_simd_group_summary <- function(simd_group_value) {
+  data_cleaned_16to64 %>%
+    filter(simd_group == simd_group_value) %>%
+    summarise(
+      simd_group = simd_group_value,
+      drating_mean = mean(drating, na.rm = TRUE),
+      drating_sd = sd(drating, na.rm = TRUE)
+    )
+}
+
+# Use functions to calculate statistics for each SIMD group and combine results
+simd_groups <- unique(data_cleaned_16to64$simd_group)
+simd_group_summary_mean <- bind_rows(lapply(simd_groups, compute_simd_group_summary))
+
+print(simd_group_summary_mean)
+#——————————————————————————————
+
+#________________________________
+# of people statistically drating and in per cent
+drating_summary <- data_cleaned_16to64 %>%
+  group_by(drating) %>%
+  tally() %>%
+  mutate(percentage = (n / sum(n)) * 100)
+
+print(drating_summary)
+
+
+# Draw box plots and add annotations
+ggplot(data_cleaned_16to64, aes(x = factor(1), y = drating)) +
+  geom_boxplot() +
+  labs(title = "Total Units of alcohol/week distribution", x = "", y = "Units of alcohol") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  annotate("text", x = 1.4, y = drating_stats$median, label = paste("Median:", round(drating_stats$median, 2)), hjust = 0, size = 2.5) +
+  annotate("text", x = 0.6, y = drating_stats$Q1, label = paste("Q1:", round(drating_stats$Q1, 2)), hjust = 1, size = 2.5) +
+  annotate("text", x = 0.6, y = drating_stats$Q3, label = paste("Q3:", round(drating_stats$Q3, 2)), hjust = 1, size = 2.5)
+
+ggplot(data_cleaned_16to64, aes(x = factor(1), y = drating)) +
+  geom_boxplot() +
+  labs(title = "Total alcohol consumption/weekly distribution", x = "", y = "Total Units of alcohol/week") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+# Aggregate all statistics
+summary_results <- list(
+  age_group_summary = age_group_summary,
+  sex_group_summary = sex_group_summary,
+  simd_group_summary = simd_group_summary,
+  drating_summary = drating_summary
+)
+
+print(summary_results)
+
+
+# Save statistics to a Word document
+doc <- read_docx()
+
+doc <- doc %>%
+  body_add_par("Age Group Summary", style = "heading 1") %>%
+  body_add_table(value = age_group_summary, style = "table_template") %>%
+  body_add_par("Sex Group Summary", style = "heading 1") %>%
+  body_add_table(value = sex_group_summary, style = "table_template") %>%
+  body_add_par("SIMD Group Summary", style = "heading 1") %>%
+  body_add_table(value = simd_group_summary, style = "table_template") %>%
+  body_add_par("Drating Summary", style = "heading 1") %>%
+  body_add_table(value = drating_summary, style = "table_template")
+
+print(doc, target = "summary_results.docx")
+
+#__________________________________
+# Extract strata_id and corresponding sample size
+strata_sample_size <- data_cleaned_16to64 %>%
+  group_by(strata_id) %>%
+  tally() %>%
+  ungroup()
+
+# Grouped by sample size range (spacing of 10)
+strata_sample_size <- strata_sample_size %>%
+  mutate(size_group = case_when(
+    n == 0 ~ "0",
+    n >= 1 & n <= 5 ~ "1-5",
+    n >= 6 & n <= 10 ~ "6-10",
+    n >= 11 & n <= 20 ~ "11-20",
+    n >= 21 & n <= 30 ~ "21-30",
+    n >= 31 & n <= 40 ~ "31-40",
+    n >= 41 & n <= 50 ~ "41-50",
+    n >= 51 & n <= 60 ~ "51-60",
+    n >= 61 & n <= 70 ~ "61-70"
+  ))
+
+
+# Calculate the number and percentage of strata in each range
+strata_summary  <- strata_sample_size %>%
+  group_by(size_group) %>%
+  tally() %>%
+  mutate(percentage = (n / sum(n)) * 100)
+
+print(strata_summary)
+
+
+
+#--------------------------------------
+#--------------------------------------
+# Create cross-layer variables
+data_cleaned_16to64 <- data_cleaned_16to64 %>%
+  mutate(
+    strata_id = paste0(sex_group, ":", age_group, ":", simd_group)
+  )
+
+# Convert cross-layer variables to factors
+data_cleaned_16to64$strata_id <- factor(data_cleaned_16to64$strata_id)
+
+summary(data_cleaned_16to64$strata_id)
+
+table_summary <- data_tabulate(data_cleaned_16to64$strata_id)
+
+print(table_summary)
+
+
+
+
+
+# Fitting model 1：drating ~ 1 + (1|strata_id)
+model1 <- lmer(drating ~ 1 + (1 | strata_id), data = data_cleaned_16to64)
+
+# Fitting model 2：drating ~ 1 + age + sex + simd + (1|strata_id)
+model2 <- lmer(drating ~ 1 + age_group + sex_group + simd_group + (1 | strata_id), data = data_cleaned_16to64)
+
+summary(model1)
+summary(model2)
+
+# Print formatted model parameters
+model1_parameters <- model_parameters(model1)
+model2_parameters <- model_parameters(model2)
+print(model1_parameters)
+print(model2_parameters)
+
+
+# Compare model parameters
+compare_parameters( model1, model2)
+
+# Calculate ICC (VPC)
+model1_icc_result <- performance::icc(model1)
+model2_icc_result <- performance::icc(model2)
+
+print(model1_icc_result)
+print(model2_icc_result)
+
+# Extract the variance of each model
+v_model1 <- get_variance(model1)
+v_model2 <- get_variance(model2)
+
+# Calculate the change in variance between models
+# Change in variance from model 1 to model 2
+pcv_model1_to_model2 <- (v_model1$var.random - v_model2$var.random) / v_model1$var.random
+print(pcv_model1_to_model2)
+
+# Predict with predict_response
+predictions <- predict_response(
+  model2,
+  c("age_group", "sex_group", "simd_group"),
+  type = "random",
+  interval = "confidence"
+)
+
+print(predictions)
+
+# Save predictions as CSV files
+write.csv(predictions_df, "predictions.csv", row.names = FALSE)
+
+plot(predictions)
+
+
+
+# Make sure predictions is a dataframe
+predictions_df <- as.data.frame(predictions)
+
+print(colnames(predictions_df))
+
+# Generate forecasts with grouping information
+predictions <- predict(model2, newdata = data_cleaned_16to64, re.form = NULL, allow.new.levels = TRUE, se.fit = TRUE)
+predictions_df <- data_cleaned_16to64 %>%
+  mutate(predicted = predictions$fit,
+         std.error = predictions$se.fit,
+         conf.low = predictions$fit - 1.96 * predictions$se.fit,
+         conf.high = predictions$fit + 1.96 * predictions$se.fit,
+         group = paste(sex_group, simd_group, sep = ":"),
+         facet = as.factor(simd_group))
+
+# Separate 'sex_group' and 'simd_group' information in 'group' columns
+predictions_df <- predictions_df %>%
+  separate(group, into = c("sex_group", "simd_group"), sep = ":")
+# Plotting the predictions for each SIMD group
+plot_list <- list()
+for (simd in unique(predictions_df$facet)) {
+  plot <- ggplot(predictions_df %>% filter(facet == simd), aes(x = as.factor(age_group), y = predicted, color = sex_group)) +
+    geom_point(position = position_dodge(width = 0.5)) +
+    geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2, position = position_dodge(width = 0.5)) +
+    labs(title = paste("Predicted values of drating (SIMD Group", simd, ")"), x = "Age Group", y = "Drating") +
+    theme_minimal()
+  plot_list[[simd]] <- plot
+}
+
+# Print all charts
+for (plot in plot_list) {
+  print(plot)
+}
+
+
+# Generate emmeans objects for model 2
+emmeans_model2 <- emmeans(model2, ~ sex_group + age_group + simd_group, type = "response")
+
+# Extract results of pairwise comparisons for model 2
+pairwise_comparisons_model2 <- contrast(emmeans_model2, method = "pairwise")
+
+# Print the first 10 rows of pairwise comparisons for model 2 and export the full results of the pairwise comparisons
+print(pairwise_comparisons_model2[1:10, ])
+
+write.csv(as.data.frame(pairwise_comparisons_model2), "pairwise_comparisons_model2.csv")
+
+
+
